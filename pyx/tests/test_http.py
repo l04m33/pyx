@@ -34,7 +34,8 @@ class TestHttpMessage(unittest.TestCase):
 
     def test_write_headers(self):
         msg = create_dummy_message()
-        self.assertEqual(msg.write_headers(), ['Server: Pyx', 'Cookie: a', 'Cookie: b'])
+        self.assertEqual(msg.write_headers(),
+                         ['Server: Pyx', 'Cookie: a', 'Cookie: b'])
 
         msg.headers = []
         self.assertEqual(msg.write_headers(), [])
@@ -94,8 +95,16 @@ class TestHttpResponse(unittest.TestCase):
             http.HttpHeader('Server', 'Pyx'),
             http.HttpHeader('Connection', 'keep-alive')
         ]
-        self.assertEqual(resp.write(), ["HTTP/1.1 200 OK", "Server: Pyx", "Connection: keep-alive", "\r\n"])
-        self.assertEqual(str(resp), "HTTP/1.1 200 OK\r\nServer: Pyx\r\nConnection: keep-alive\r\n\r\n")
+        self.assertEqual(resp.write(),
+                         ['HTTP/1.1 200 OK',
+                          'Server: Pyx',
+                          'Connection: keep-alive',
+                          '\r\n'])
+        self.assertEqual(str(resp),
+                         'HTTP/1.1 200 OK\r\n'
+                         'Server: Pyx\r\n'
+                         'Connection: keep-alive\r\n'
+                         '\r\n')
 
 
 class DummyResource(http.UrlResource):
@@ -120,10 +129,33 @@ class TestUrlResource(unittest.TestCase):
 
         sres = res.dispatch('/static')
         self.assertEqual(sres.root, '.')
-        self.assertEqual(sres.path, '')
+        self.assertEqual(sres._build_real_path(), '.')
 
         sres = res.dispatch('/static/')
-        self.assertEqual(sres.path, '')
+        self.assertEqual(sres._build_real_path(), '.')
 
         sres = res.dispatch('/static/some/path')
-        self.assertEqual(sres.path, 'some/path')
+        self.assertEqual(sres._build_real_path(), './some/path')
+
+
+class TestStaticRootResource(unittest.TestCase):
+    def test_build_real_path(self):
+        res = http.StaticRootResource('local_root')
+        res = res.dispatch('/some/long/path/where/ever/it/leads/')
+        self.assertEqual(res._build_real_path(),
+                         'local_root/some/long/path/where/ever/it/leads')
+
+        res = http.StaticRootResource('local_root')
+        res = res.dispatch('/some/../dangerous/path')
+        self.assertEqual(res._build_real_path(),
+                         'local_root/dangerous/path')
+
+        res = http.StaticRootResource('local_root')
+        res = res.dispatch('/some/../../dangerous/path')
+        self.assertEqual(res._build_real_path(),
+                         'local_root/dangerous/path')
+
+        res = http.StaticRootResource('local_root')
+        res = res.dispatch('/some/%2e%2e%2f%2e%2e/dangerous/path')
+        self.assertEqual(res._build_real_path(),
+                         'local_root/dangerous/path')

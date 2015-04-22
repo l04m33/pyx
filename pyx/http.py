@@ -330,16 +330,25 @@ class UrlResource:
 class StaticRootResource(UrlResource):
     def __init__(self, local_root):
         self.root = local_root
-        self.path = ""
+        self.path = []
 
     def __getitem__(self, key):
-        self.path = os.path.join(self.path, key)
+        unquoted_key = urllib.parse.unquote(key)
+        segs = unquoted_key.split('/')
+        for s in segs:
+            if s == '..':
+                if len(self.path) > 0:
+                    self.path.pop()
+            else:
+                self.path.append(s)
         return self
+
+    def _build_real_path(self):
+        return os.path.join(self.root, *self.path)
 
     @asyncio.coroutine
     def handle(self, req):
-        path = urllib.parse.unquote(self.path)
-        path = os.path.join(self.root, self.path)
+        path = self._build_real_path()
 
         logger('StaticRootResource').debug('path = %r', path)
 
