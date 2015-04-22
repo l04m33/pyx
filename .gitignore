@@ -1,4 +1,5 @@
 pyx.egg-info
+cover
 .coverage
 *.pyc
 __pycache__
