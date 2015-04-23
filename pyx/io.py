@@ -142,3 +142,135 @@ class AsyncFileWrapper:
             self.read_handle.cancel()
         if hasattr(self, 'write_handle'):
             self.write_handle.cancel()
+
+
+class BufferedMixin:
+    def init_buffer(self):
+        self._buffer = []
+
+    def flush_buffer(self):
+        buffered = b''.join(self._buffer)
+        self._buffer = []
+        return buffered
+
+    def read_from_buffer(self, n):
+        if n < 0:
+            self._buffer.reverse()
+            buffered = b''.join(self._buffer)
+            self._buffer = []
+            return (buffered, n)
+        else:
+            buffered = bytearray()
+            while n > 0 and len(self._buffer) > 0:
+                data = self._buffer.pop()
+                if len(data) > n:
+                    self._buffer.append(data[n:])
+                    buffered.extend(data[0:n])
+                    n = 0
+                else:
+                    buffered.extend(data)
+                    n -= len(data)
+            return (bytes(buffered), n)
+
+    def put(self, data):
+        self._buffer.append(data)
+
+
+class BaseReader:
+    def __init__(self, reader):
+        self._reader = reader
+
+
+class BufferedReader(BaseReader, BufferedMixin):
+    def __init__(self, reader):
+        super().__init__(reader)
+        self.init_buffer()
+
+    @asyncio.coroutine
+    def readline(self):
+        buffered = self.flush_buffer()
+        nl_idx = buffered.find(b'\n')
+        if nl_idx < 0:
+            more_data = yield from self._reader.readline()
+            return b''.join([buffered, more_data])
+        else:
+            self.put(buffered[(nl_idx+1):])
+            return buffered[0:(nl_idx+1)]
+
+    @asyncio.coroutine
+    def read(self, n=-1):
+        buffered, more = self.read_from_buffer(n)
+        if more != 0:
+            more_data = yield from self._reader.read(more)
+            return b''.join([buffered, more_data])
+        else:
+            return buffered
+
+    @asyncio.coroutine
+    def readexactly(self, n):
+        if n < 0:
+            return b''
+
+        buffered, more = self.read_from_buffer(n)
+        if more != 0:
+            more_data = yield from self._reader.readexactly(more)
+            return b''.join([buffered, more_data])
+        else:
+            return buffered
+
+
+class LengthReader(BaseReader):
+    def __init__(self, reader, length):
+        super().__init__(reader)
+
+        assert length >= 0, "Negative length not allowed"
+        self._length = length
+        self._remaining = length
+
+    def put(self, data):
+        self._reader.put(data)
+        self._remaining += len(data)
+
+    @asyncio.coroutine
+    def readline(self):
+        if self._remaining > 0:
+            data = yield from self._reader.readline()
+            if len(data) > self._remaining:
+                self._reader.put(data[(self._remaining):])
+                data = data[0:(self._remaining)]
+                self._remaining = 0
+                return data
+            else:
+                self._remaining -= len(data)
+                return data
+        else:
+            return b''
+
+    @asyncio.coroutine
+    def read(self, n=-1):
+        if self._remaining > 0:
+            if n < 0:
+                data = yield from self._reader.read(self._remaining)
+                self._remaining -= len(data)
+                return data
+            else:
+                data = yield from self._reader.read(min(self._remaining, n))
+                self._remaining -= len(data)
+                return data
+        else:
+            return b''
+
+    @asyncio.coroutine
+    def readexactly(self, n):
+        if n < 0:
+            return b''
+
+        if self._remaining > 0:
+            if self._remaining < n:
+                data = yield from self._reader.readexactly(self._remaining)
+                raise asyncio.IncompleteReadError(data, n)
+            data = yield from self._reader.readexactly(n)
+            self._remaining -= len(data)
+            return data
+        else:
+            raise asyncio.IncompleteReadError(b'', n)
