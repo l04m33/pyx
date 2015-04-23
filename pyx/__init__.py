@@ -7,7 +7,10 @@ def main():
     # TODO: parse commandline options
     loop = asyncio.get_event_loop()
 
-    req_cb = HttpRequestCB(lambda: StaticRootResource('.'))
+    def root_factory(req):
+        return StaticRootResource('.')
+
+    req_cb = HttpRequestCB(root_factory)
     conn_cb = HttpConnectionCB(req_cb)
 
     starter = asyncio.start_server(conn_cb, '127.0.0.1', 8080, loop=loop)

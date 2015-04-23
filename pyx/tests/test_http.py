@@ -108,7 +108,7 @@ class TestHttpResponse(unittest.TestCase):
 
 
 class DummyResource(http.UrlResource):
-    def __getitem__(self, key):
+    def get_child(self, key):
         if key == 'hello':
             return self
         elif key == "static":

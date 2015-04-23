@@ -234,10 +234,13 @@ def default_error_page(code):
 
 
 class DefaultHttpErrorHandler:
+    def __init__(self, error_page=default_error_page):
+        self._gen_error_page = error_page
+
     @asyncio.coroutine
     def __call__(self, err, req):
         resp = req.respond(err.code)
-        content = default_error_page(err.code)
+        content = self._gen_error_page(err.code)
         resp.headers.append(HttpHeader('Content-Length', len(content)))
         resp.headers.append(HttpHeader('Content-Type', 'text/html'))
         yield from resp.send()
@@ -253,42 +256,48 @@ class HttpRequestCB:
         self._error_handler = error_handler
 
     @asyncio.coroutine
+    def _generate_500_and_stop(self, req, trace_msg):
+        logger('HttpRequestCB').debug(trace_msg)
+        if not req.responded:
+            e = HttpError(500, trace_msg)
+            try:
+                yield from self._error_handler(e, req)
+            except:
+                logger('HttpRequestCB').debug(traceback.format_exc())
+        req.connection.close()
+
+    @asyncio.coroutine
+    def _handle_http_error(self, req, exc, trace_msg):
+        if not req.responded:
+            try:
+                yield from self._error_handler(exc, req)
+            except:
+                logger('HttpRequestCB').debug(trace_msg)
+                req.connection.close()
+
+    @asyncio.coroutine
     def __call__(self, req):
         try:
-            res = self._root_factory()
+            res = self._root_factory(req)
             res = res.traverse(req.path)
         except HttpError as e:
-            yield from self._error_handler(e, req)
+            yield from self._handle_http_error(req, e, traceback.format_exc())
+            return
+        except:
+            yield from self._generate_500_and_stop(req, traceback.format_exc())
             return
 
         try:
-            yield from res.handle(req)
-
+            yield from res.handle_request(req)
         except HttpError as e:
-            if not req.responded:
-                try:
-                    yield from self._error_handler(e, req)
-                except:
-                    logger('HttpRequestCB').debug(traceback.format_exc())
-                    req.connection.close()
-
+            yield from self._handle_http_error(req, e, traceback.format_exc())
         except:
-            logger('HttpRequestCB').debug(traceback.format_exc())
-
-            if not req.responded:
-                e = HttpError(500, traceback.format_exc())
-                try:
-                    yield from self._error_handler(e, req)
-                except:
-                    # There's nothing we can do here
-                    pass
-
-            req.connection.close()
+            yield from self._generate_500_and_stop(req, traceback.format_exc())
 
 
 class HttpConnectionCB:
-    def __init__(self, req_handler):
-        self._req_handler = req_handler
+    def __init__(self, req_cb):
+        self._request_cb = req_cb
 
     @asyncio.coroutine
     def __call__(self, reader, writer):
@@ -301,7 +310,7 @@ class HttpConnectionCB:
                 conn.close()
                 break
 
-            yield from self._req_handler(req)
+            yield from self._request_cb(req)
 
             conn_header = req.get_first_header('Connection')
             if (conn_header is None) or (conn_header.upper() == 'KEEP-ALIVE'):
@@ -311,11 +320,11 @@ class HttpConnectionCB:
 
 
 class UrlResource:
-    def __getitem__(self, key):
-        raise HttpError(404, '{} not found'.format(repr(key)))
+    def get_child(self, key):
+        raise NotImplementedError('UrlResource.get_child(...) not implemented')
 
-    def handle(self, req):
-        raise HttpError(404, '{} not found'.format(repr(req.path)))
+    def handle_request(self, req):
+        raise NotImplementedError('UrlResource.get_child(...) not implemented')
 
     def traverse(self, path):
         segs = path.split('/')
@@ -323,16 +332,17 @@ class UrlResource:
         for s in segs:
             if len(s) > 0:
                 logger('UrlResource').debug("Traversing to resource %r", s)
-                res = res[s]
+                res = res.get_child(s)
         return res
 
 
 class StaticRootResource(UrlResource):
     def __init__(self, local_root):
+        super().__init__()
         self.root = local_root
         self.path = []
 
-    def __getitem__(self, key):
+    def get_child(self, key):
         unquoted_key = urllib.parse.unquote(key)
         segs = unquoted_key.split('/')
         for s in segs:
@@ -347,7 +357,7 @@ class StaticRootResource(UrlResource):
         return os.path.join(self.root, *self.path)
 
     @asyncio.coroutine
-    def handle(self, req):
+    def handle_request(self, req):
         path = self._build_real_path()
 
         logger('StaticRootResource').debug('path = %r', path)
