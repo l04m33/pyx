@@ -118,44 +118,44 @@ class DummyResource(http.UrlResource):
 
 
 class TestUrlResource(unittest.TestCase):
-    def test_dispatch(self):
+    def test_traverse(self):
         res = DummyResource()
-        self.assertEqual(res.dispatch(''), res)
-        self.assertEqual(res.dispatch('/'), res)
-        self.assertEqual(res.dispatch('/hello'), res)
+        self.assertEqual(res.traverse(''), res)
+        self.assertEqual(res.traverse('/'), res)
+        self.assertEqual(res.traverse('/hello'), res)
 
         with self.assertRaises(http.HttpError):
-            res.dispatch('/does/not/exist')
+            res.traverse('/does/not/exist')
 
-        sres = res.dispatch('/static')
+        sres = res.traverse('/static')
         self.assertEqual(sres.root, '.')
         self.assertEqual(sres._build_real_path(), '.')
 
-        sres = res.dispatch('/static/')
+        sres = res.traverse('/static/')
         self.assertEqual(sres._build_real_path(), '.')
 
-        sres = res.dispatch('/static/some/path')
+        sres = res.traverse('/static/some/path')
         self.assertEqual(sres._build_real_path(), './some/path')
 
 
 class TestStaticRootResource(unittest.TestCase):
     def test_build_real_path(self):
         res = http.StaticRootResource('local_root')
-        res = res.dispatch('/some/long/path/where/ever/it/leads/')
+        res = res.traverse('/some/long/path/where/ever/it/leads/')
         self.assertEqual(res._build_real_path(),
                          'local_root/some/long/path/where/ever/it/leads')
 
         res = http.StaticRootResource('local_root')
-        res = res.dispatch('/some/../dangerous/path')
+        res = res.traverse('/some/../dangerous/path')
         self.assertEqual(res._build_real_path(),
                          'local_root/dangerous/path')
 
         res = http.StaticRootResource('local_root')
-        res = res.dispatch('/some/../../dangerous/path')
+        res = res.traverse('/some/../../dangerous/path')
         self.assertEqual(res._build_real_path(),
                          'local_root/dangerous/path')
 
         res = http.StaticRootResource('local_root')
-        res = res.dispatch('/some/%2e%2e%2f%2e%2e/dangerous/path')
+        res = res.traverse('/some/%2e%2e%2f%2e%2e/dangerous/path')
         self.assertEqual(res._build_real_path(),
                          'local_root/dangerous/path')

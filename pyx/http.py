@@ -256,7 +256,7 @@ class HttpRequestCB:
     def __call__(self, req):
         try:
             res = self._root_factory()
-            res = res.dispatch(req.path)
+            res = res.traverse(req.path)
         except HttpError as e:
             yield from self._error_handler(e, req)
             return
@@ -317,12 +317,12 @@ class UrlResource:
     def handle(self, req):
         raise HttpError(404, '{} not found'.format(repr(req.path)))
 
-    def dispatch(self, path):
+    def traverse(self, path):
         segs = path.split('/')
         res = self
         for s in segs:
             if len(s) > 0:
-                logger('UrlResource').debug("Dispatching to resource %r", s)
+                logger('UrlResource').debug("Traversing to resource %r", s)
                 res = res[s]
         return res
 
