@@ -39,6 +39,7 @@ class HttpConnection:
         return self._closed
 
     def close(self):
+        logger('HttpConnection').debug('Closing connection....')
         self.writer.close()
         self._closed = True
 
