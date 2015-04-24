@@ -118,7 +118,7 @@ class HttpRequest(HttpMessage):
         vmark_idx = comps[2].find('/')
         self.version = (1, 1)
         if vmark_idx < 0:
-            self.protocol = comps[2].upper()
+            raise BadHttpRequestError('Bad request line: {}'.format(repr(req_line)))
         else:
             self.protocol = comps[2][0:vmark_idx].upper()
             vstr = comps[2][(vmark_idx+1):]
@@ -139,9 +139,6 @@ class HttpRequest(HttpMessage):
             raise BadHttpHeaderError('Bad header: {}'.format(repr(header_line)))
 
         key = header_line[0:col_idx].strip()
-        if len(key) == 0:
-            raise BadHttpHeaderError('Bad header: {}'.format(repr(header_line)))
-
         value = header_line[(col_idx+1):].strip()
         self.headers.append(HttpHeader(key=key, value=value))
 
@@ -149,6 +146,8 @@ class HttpRequest(HttpMessage):
         # TODO: respect encodings etc. in the request
         resp = HttpResponse(code, self.connection)
         resp.request = self
+        if hasattr(self, 'version'):
+            resp.version = self.version
         return resp
 
     @property
