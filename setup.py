@@ -44,6 +44,6 @@ setup(
     },
     entry_points='''
     [console_scripts]
-    {0} = {0}:main
+    {0} = {0}.cmd:main
     '''.format(PACKAGE_NAME),
 )
