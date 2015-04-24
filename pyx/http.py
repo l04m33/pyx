@@ -311,11 +311,15 @@ class HttpConnectionCB:
 
             yield from self._request_cb(req)
 
-            conn_header = req.get_first_header('Connection')
-            if (conn_header is None) or (conn_header.upper() == 'KEEP-ALIVE'):
-                continue
-            else:
+            if req.version < (1, 1):
                 conn.close()
+            else:
+                conn_header = req.get_first_header('Connection')
+                if (conn_header is None) or \
+                        (conn_header.upper() == 'KEEP-ALIVE'):
+                    continue
+                else:
+                    conn.close()
 
 
 class UrlResource:
