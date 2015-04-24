@@ -1,3 +1,29 @@
+"""Routines & classes that are related to HTTP protocol processing.
+
+A basic HTTP server can be assembled in a simple way::
+
+    import asyncio
+    from pyx.http import (HttpHeader, HttpConnectionCB)
+
+    @asyncio.coroutine
+    def req_cb(req):
+        resp = req.respond(200)
+        resp.headers.append(HttpHeader('Content-Length', 5))
+        resp.headers.append(HttpHeader('Content-Type', 'text/plain'))
+        yield from resp.send()
+        yield from resp.send_body(b'hello')
+
+    loop = asyncio.get_event_loop()
+
+    conn_cb = HttpConnectionCB(req_cb)
+    starter = asyncio.start_server(conn_cb, '127.0.0.1', 8080, loop=loop)
+    _server = loop.run_until_complete(starter)
+
+    loop.run_forever()
+
+"""
+
+
 import asyncio
 import collections
 import urllib
@@ -8,14 +34,37 @@ from .log import logger
 from .io import AsyncFile
 
 
-class BadHttpRequestError(Exception): pass
-class BadHttpHeaderError(Exception): pass
+class BadHttpRequestError(Exception):
+    """Raised when the HTTP request is invalid."""
+
+
+class BadHttpHeaderError(Exception):
+    """Raised when there is an invalid HTTP header.
+
+    ``HttpRequest.parse`` catches and log this exception by default. The invalid
+    header will then be skipped.
+    """
 
 
 class HttpError(Exception):
-    def __init__(self, code, msg):
+    """Raised when the request handling code wants to generate an HTTP error
+    code (404, 500, etc.).
+
+    The ``code`` argument is an integer standing for standard HTTP status code.
+    The optional ``msg`` argument can be used to provide more info in logs.
+    """
+
+    def __init__(self, code, msg=''):
         super().__init__(msg)
         self.code = code
+
+    def __str__(self):
+        msg = super().__str__()
+        if msg:
+            return '{}({}, {})'.format(self.__class__.__name__,
+                                       self.code, repr(msg))
+        else:
+            return '{}({})'.format(self.__class__.__name__, self.code)
 
 
 status_messages = {
