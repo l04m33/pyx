@@ -1,10 +1,13 @@
 import asyncio
+import logging
 from .log import logger
 from .http import (HttpConnectionCB, HttpRequestCB, StaticRootResource)
 
 
 def main():
     # TODO: parse commandline options
+    logging.basicConfig(level=logging.DEBUG)
+
     loop = asyncio.get_event_loop()
 
     def root_factory(req):

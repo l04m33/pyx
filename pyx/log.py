@@ -8,6 +8,3 @@ def logger(name=""):
         name = '.'.join([__package__, name])
 
     return logging.getLogger(name)
-
-
-logging.basicConfig(level=logging.DEBUG)
