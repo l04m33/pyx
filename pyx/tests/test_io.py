@@ -19,7 +19,7 @@ class TestAsyncFileWrapper(unittest.TestCase):
         loop = asyncio.get_event_loop()
         f = create_dummy_file()
 
-        with io.AsyncFileWrapper(fileobj=f) as af:
+        with io.AsyncFile(fileobj=f) as af:
             data = loop.run_until_complete(af.read(15))
             self.assertEqual(data, b'dummy content\r\n')
             data = loop.run_until_complete(af.read(17))
@@ -35,7 +35,7 @@ class TestAsyncFileWrapper(unittest.TestCase):
         f = create_dummy_file()
         f.seek(0, 2)
 
-        with io.AsyncFileWrapper(fileobj=f) as af:
+        with io.AsyncFile(fileobj=f) as af:
             written = loop.run_until_complete(af.write(b'new data\r\n'))
             self.assertEqual(written, 10)
             self.assertEqual(af.tell(), 76)

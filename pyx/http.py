@@ -5,7 +5,7 @@ import mimetypes
 import os
 import traceback
 from .log import logger
-from .io import AsyncFileWrapper
+from .io import AsyncFile
 
 
 class BadHttpRequestError(Exception): pass
@@ -365,7 +365,7 @@ class StaticRootResource(UrlResource):
         if os.path.isfile(path):
             file_size = os.path.getsize(path)
 
-            with AsyncFileWrapper(filename=path) as af:
+            with AsyncFile(filename=path) as af:
                 resp = req.respond(200)
 
                 resp.headers.append(HttpHeader('Content-Length', file_size))

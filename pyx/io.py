@@ -6,7 +6,7 @@ import errno
 import io
 
 
-class AsyncFileWrapper:
+class AsyncFile:
     DEFAULT_BLOCK_SIZE = 8192
 
     def __init__(self, loop=None, filename=None,
