@@ -54,13 +54,12 @@ class AsyncFile:
     def read_ready(self, future, n, total):
         try:
             res = self.fileobj.read(n)
-        except Exception as exc:
-            future.set_exception(exc)
-            return
-
-        if res is None:  # Blocked
+        except (BlockingIOError, InterruptedError):
             self.read_handle = \
                 self.loop.call_soon(self.read_ready, future, n, total)
+            return
+        except Exception as exc:
+            future.set_exception(exc)
             return
 
         if not res:     # EOF
@@ -90,25 +89,32 @@ class AsyncFile:
 
         if n == 0:
             future.set_result(b'')
-            return future
-        elif n < 0:
-            self.rbuffer.clear()
-            self.read_handle = \
-                self.loop.call_soon(self.read_ready, future,
-                                    self.DEFAULT_BLOCK_SIZE, n)
         else:
-            self.rbuffer.clear()
-            read_block_size = min(self.DEFAULT_BLOCK_SIZE, n)
-            self.read_handle = \
-                self.loop.call_soon(self.read_ready, future,
-                                    read_block_size, n)
+            try:
+                res = self.fileobj.read(n)
+            except (BlockingIOError, InterruptedError):
+                if n < 0:
+                    self.rbuffer.clear()
+                    self.read_handle = \
+                        self.loop.call_soon(self.read_ready, future,
+                                            self.DEFAULT_BLOCK_SIZE, n)
+                else:
+                    self.rbuffer.clear()
+                    read_block_size = min(self.DEFAULT_BLOCK_SIZE, n)
+                    self.read_handle = \
+                        self.loop.call_soon(self.read_ready, future,
+                                            read_block_size, n)
+            except Exception as exc:
+                future.set_exception(exc)
+
+            future.set_result(res)
 
         return future
 
     def write_ready(self, future, data, written):
         try:
             res = self.fileobj.write(data)
-        except io.BlockingIOError:
+        except (BlockingIOError, InterruptedError):
             self.write_handle = \
                 self.loop.call_soon(self.write_ready, future, data, written)
             return
@@ -128,11 +134,18 @@ class AsyncFile:
     def write(self, data):
         future = asyncio.Future(loop=self.loop)
 
-        if len(data) > 0:
-            self.write_handle = \
-                self.loop.call_soon(self.write_ready, future, data, 0)
-        else:
+        if len(data) == 0:
             future.set_result(0)
+        else:
+            try:
+                res = self.fileobj.write(data)
+            except (BlockingIOError, InterruptedError):
+                self.write_handle = \
+                    self.loop.call_soon(self.write_ready, future, data, 0)
+            except Exception as exc:
+                future.set_exception(exc)
+
+            future.set_result(res)
 
         return future
 
