@@ -55,8 +55,9 @@ class AsyncFile:
         try:
             res = self.fileobj.read(n)
         except (BlockingIOError, InterruptedError):
-            self.read_handle = \
-                self.loop.call_soon(self.read_ready, future, n, total)
+            self.loop.add_reader(self.fileobj.fileno(),
+                                 self.read_ready,
+                                 future, n, total)
             return
         except Exception as exc:
             future.set_exception(exc)
@@ -75,13 +76,13 @@ class AsyncFile:
                 future.set_result(bytes(res))
             else:
                 more_to_go = min(self.DEFAULT_BLOCK_SIZE, more_to_go)
-                self.read_handle = \
-                    self.loop.call_soon(self.read_ready, future,
-                                        more_to_go, total)
+                self.loop.add_reader(self.fileobj.fileno(),
+                                     self.read_ready,
+                                     future, more_to_go, total)
         else:   # total < 0
-            self.read_handle = \
-                self.loop.call_soon(self.read_ready, future,
-                                    self.DEFAULT_BLOCK_SIZE, total)
+            self.loop.add_reader(self.fileobj.fileno(),
+                                 self.read_ready,
+                                 future, self.DEFAULT_BLOCK_SIZE, total)
 
     @asyncio.coroutine
     def read(self, n=-1):
@@ -95,15 +96,15 @@ class AsyncFile:
             except (BlockingIOError, InterruptedError):
                 if n < 0:
                     self.rbuffer.clear()
-                    self.read_handle = \
-                        self.loop.call_soon(self.read_ready, future,
-                                            self.DEFAULT_BLOCK_SIZE, n)
+                    self.loop.add_reader(self.fileobj.fileno(),
+                                         self.read_ready,
+                                         future, self.DEFAULT_BLOCK_SIZE, n)
                 else:
                     self.rbuffer.clear()
                     read_block_size = min(self.DEFAULT_BLOCK_SIZE, n)
-                    self.read_handle = \
-                        self.loop.call_soon(self.read_ready, future,
-                                            read_block_size, n)
+                    self.loop.add_reader(self.fileobj.fileno(),
+                                         self.read_ready,
+                                         future, read_block_size, n)
             except Exception as exc:
                 future.set_exception(exc)
 
@@ -115,8 +116,9 @@ class AsyncFile:
         try:
             res = self.fileobj.write(data)
         except (BlockingIOError, InterruptedError):
-            self.write_handle = \
-                self.loop.call_soon(self.write_ready, future, data, written)
+            self.loop.add_writer(self.fileobj.fileno(),
+                                 self.write_ready,
+                                 future, data, written)
             return
         except Exception as exc:
             future.set_exception(exc)
@@ -124,9 +126,9 @@ class AsyncFile:
 
         if res < len(data):
             data = data[res:]
-            self.write_handle = \
-                self.loop.call_soon(self.write_ready, future,
-                                    data, written + res)
+            self.loop.add_writer(self.fileobj.fileno(),
+                                 self.write_ready,
+                                 future, data, written + res)
         else:
             future.set_result(written + res)
 
@@ -140,8 +142,9 @@ class AsyncFile:
             try:
                 res = self.fileobj.write(data)
             except (BlockingIOError, InterruptedError):
-                self.write_handle = \
-                    self.loop.call_soon(self.write_ready, future, data, 0)
+                self.loop.add_writer(self.fileobj.fileno(),
+                                     self.write_ready,
+                                     future, data, 0)
             except Exception as exc:
                 future.set_exception(exc)
 
@@ -150,11 +153,9 @@ class AsyncFile:
         return future
 
     def close(self):
+        self.loop.remove_reader(self.fileobj.fileno())
+        self.loop.remove_writer(self.fileobj.fileno())
         self.fileobj.close()
-        if hasattr(self, 'read_handle'):
-            self.read_handle.cancel()
-        if hasattr(self, 'write_handle'):
-            self.write_handle.cancel()
 
 
 class BufferedMixin:
