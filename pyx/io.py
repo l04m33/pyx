@@ -29,12 +29,12 @@ class AsyncFile:
             errcode = ctypes.get_errno()
             raise OSError((errcode, errno.errorcode[errcode]))
 
-        self.fileobj = fileobj
+        self._fileobj = fileobj
 
         if loop is None:
             loop = asyncio.get_event_loop()
-        self.loop = loop
-        self.rbuffer = bytearray()
+        self._loop = loop
+        self._rbuffer = bytearray()
 
     def __enter__(self):
         return self
@@ -44,67 +44,67 @@ class AsyncFile:
 
     def seek(self, offset, whence=None):
         if whence is None:
-            return self.fileobj.seek(offset)
+            return self._fileobj.seek(offset)
         else:
-            return self.fileobj.seek(offset, whence)
+            return self._fileobj.seek(offset, whence)
 
     def tell(self):
-        return self.fileobj.tell()
+        return self._fileobj.tell()
 
-    def read_ready(self, future, n, total):
+    def _read_ready(self, future, n, total):
         try:
-            res = self.fileobj.read(n)
+            res = self._fileobj.read(n)
         except (BlockingIOError, InterruptedError):
-            self.loop.add_reader(self.fileobj.fileno(),
-                                 self.read_ready,
-                                 future, n, total)
+            self._loop.add_reader(self._fileobj.fileno(),
+                                  self._read_ready,
+                                  future, n, total)
             return
         except Exception as exc:
             future.set_exception(exc)
             return
 
         if not res:     # EOF
-            future.set_result(bytes(self.rbuffer))
+            future.set_result(bytes(self._rbuffer))
             return
 
-        self.rbuffer.extend(res)
+        self._rbuffer.extend(res)
 
         if total > 0:
-            more_to_go = total - len(self.rbuffer)
+            more_to_go = total - len(self._rbuffer)
             if more_to_go <= 0:  # enough
-                res, self.rbuffer = self.rbuffer[:n], self.rbuffer[n:]
+                res, self._rbuffer = self._rbuffer[:n], self._rbuffer[n:]
                 future.set_result(bytes(res))
             else:
                 more_to_go = min(self.DEFAULT_BLOCK_SIZE, more_to_go)
-                self.loop.add_reader(self.fileobj.fileno(),
-                                     self.read_ready,
-                                     future, more_to_go, total)
+                self._loop.add_reader(self._fileobj.fileno(),
+                                      self._read_ready,
+                                      future, more_to_go, total)
         else:   # total < 0
-            self.loop.add_reader(self.fileobj.fileno(),
-                                 self.read_ready,
-                                 future, self.DEFAULT_BLOCK_SIZE, total)
+            self._loop.add_reader(self._fileobj.fileno(),
+                                  self._read_ready,
+                                  future, self.DEFAULT_BLOCK_SIZE, total)
 
     @asyncio.coroutine
     def read(self, n=-1):
-        future = asyncio.Future(loop=self.loop)
+        future = asyncio.Future(loop=self._loop)
 
         if n == 0:
             future.set_result(b'')
         else:
             try:
-                res = self.fileobj.read(n)
+                res = self._fileobj.read(n)
             except (BlockingIOError, InterruptedError):
                 if n < 0:
-                    self.rbuffer.clear()
-                    self.loop.add_reader(self.fileobj.fileno(),
-                                         self.read_ready,
-                                         future, self.DEFAULT_BLOCK_SIZE, n)
+                    self._rbuffer.clear()
+                    self._loop.add_reader(self._fileobj.fileno(),
+                                          self._read_ready,
+                                          future, self.DEFAULT_BLOCK_SIZE, n)
                 else:
-                    self.rbuffer.clear()
+                    self._rbuffer.clear()
                     read_block_size = min(self.DEFAULT_BLOCK_SIZE, n)
-                    self.loop.add_reader(self.fileobj.fileno(),
-                                         self.read_ready,
-                                         future, read_block_size, n)
+                    self._loop.add_reader(self._fileobj.fileno(),
+                                          self._read_ready,
+                                          future, read_block_size, n)
             except Exception as exc:
                 future.set_exception(exc)
 
@@ -112,13 +112,13 @@ class AsyncFile:
 
         return future
 
-    def write_ready(self, future, data, written):
+    def _write_ready(self, future, data, written):
         try:
-            res = self.fileobj.write(data)
+            res = self._fileobj.write(data)
         except (BlockingIOError, InterruptedError):
-            self.loop.add_writer(self.fileobj.fileno(),
-                                 self.write_ready,
-                                 future, data, written)
+            self._loop.add_writer(self._fileobj.fileno(),
+                                  self._write_ready,
+                                  future, data, written)
             return
         except Exception as exc:
             future.set_exception(exc)
@@ -126,25 +126,25 @@ class AsyncFile:
 
         if res < len(data):
             data = data[res:]
-            self.loop.add_writer(self.fileobj.fileno(),
-                                 self.write_ready,
-                                 future, data, written + res)
+            self._loop.add_writer(self._fileobj.fileno(),
+                                  self._write_ready,
+                                  future, data, written + res)
         else:
             future.set_result(written + res)
 
     @asyncio.coroutine
     def write(self, data):
-        future = asyncio.Future(loop=self.loop)
+        future = asyncio.Future(loop=self._loop)
 
         if len(data) == 0:
             future.set_result(0)
         else:
             try:
-                res = self.fileobj.write(data)
+                res = self._fileobj.write(data)
             except (BlockingIOError, InterruptedError):
-                self.loop.add_writer(self.fileobj.fileno(),
-                                     self.write_ready,
-                                     future, data, 0)
+                self._loop.add_writer(self._fileobj.fileno(),
+                                      self._write_ready,
+                                      future, data, 0)
             except Exception as exc:
                 future.set_exception(exc)
 
@@ -153,9 +153,9 @@ class AsyncFile:
         return future
 
     def close(self):
-        self.loop.remove_reader(self.fileobj.fileno())
-        self.loop.remove_writer(self.fileobj.fileno())
-        self.fileobj.close()
+        self._loop.remove_reader(self._fileobj.fileno())
+        self._loop.remove_writer(self._fileobj.fileno())
+        self._fileobj.close()
 
 
 class BufferedMixin:
