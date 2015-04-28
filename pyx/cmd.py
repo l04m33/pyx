@@ -49,7 +49,9 @@ def main():
     conn_cb = HttpConnectionCB(req_cb)
 
     starter = asyncio.start_server(conn_cb, args.bind, args.port,
-                                   backlog=args.backlog, loop=loop)
+                                   backlog=args.backlog,
+                                   reuse_address=True,
+                                   loop=loop)
     server = loop.run_until_complete(starter)
 
     if args.bind == '':
