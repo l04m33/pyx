@@ -31,7 +31,7 @@ import mimetypes
 import os
 import traceback
 from .log import logger
-from .io import AsyncFile
+from .io import (AsyncFile, sendfile_async)
 
 
 class BadHttpRequestError(Exception):
@@ -416,20 +416,18 @@ class StaticRootResource(UrlResource):
         logger('StaticRootResource').debug('path = %r', path)
 
         if os.path.isfile(path):
-            file_size = os.path.getsize(path)
 
             with AsyncFile(filename=path) as af:
                 resp = req.respond(200)
 
+                file_size = af.stat().st_size
                 resp.headers.append(HttpHeader('Content-Length', file_size))
                 mimetype, _encoding = mimetypes.guess_type(path)
                 if mimetype is not None:
                     resp.headers.append(HttpHeader('Content-Type', mimetype))
 
                 yield from resp.send()
-                file_block = yield from af.read(8192)
-                while len(file_block) > 0:
-                    yield from resp.send_body(file_block)
-                    file_block = yield from af.read(8192)
+                sock = resp.connection.writer.get_extra_info('socket')
+                yield from sendfile_async(sock, af, None, file_size)
         else:
             raise HttpError(404, '{} not found'.format(repr(path)))

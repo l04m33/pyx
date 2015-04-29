@@ -42,6 +42,9 @@ class AsyncFile:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
+    def fileno(self):
+        return self._fileobj.fileno()
+
     def seek(self, offset, whence=None):
         if whence is None:
             return self._fileobj.seek(offset)
@@ -160,6 +163,33 @@ class AsyncFile:
         self._loop.remove_writer(self._fileobj.fileno())
         self._fileobj.close()
 
+
+def sendfile_async(out_f, in_f, offset, nbytes, loop=None):
+    def _get_fileno(f):
+        if hasattr(f, 'fileno'):
+            f = f.fileno()
+        elif not isinstance(f, int):
+            raise TypeError('Expected {}, but got {}'.format(int, type(f)))
+        return f
+
+    out_f = _get_fileno(out_f)
+    in_f = _get_fileno(in_f)
+    loop = loop or asyncio.get_event_loop()
+    future = asyncio.Future(loop=loop)
+
+    def _write_cb():
+        try:
+            res = os.sendfile(out_f, in_f, offset, nbytes)
+        except (BlockingIOError, InterruptedError):
+            loop.add_writer(out_f, _write_cb)
+        except Exception as exc:
+            future.set_exception(exc)
+        else:
+            future.set_result(res)
+
+    _write_cb()
+
+    return future
 
 class BufferedMixin:
     def init_buffer(self):

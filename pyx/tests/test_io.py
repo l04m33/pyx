@@ -14,7 +14,12 @@ def create_dummy_file():
     return f
 
 
-class TestAsyncFileWrapper(unittest.TestCase):
+def create_empty_file():
+    f = tempfile.NamedTemporaryFile()
+    return f
+
+
+class TestAsyncFile(unittest.TestCase):
     def test_read(self):
         loop = asyncio.get_event_loop()
         f = create_dummy_file()
@@ -49,6 +54,26 @@ class TestAsyncFileWrapper(unittest.TestCase):
                              b'new data\r\n')
 
         self.assertTrue(f.closed)
+
+
+class TestSendfileAsync(unittest.TestCase):
+    def test_sendfile_async(self):
+        loop = asyncio.get_event_loop()
+        f1 = create_dummy_file()
+        f2 = create_empty_file()
+
+        with io.AsyncFile(fileobj=f1) as af1:
+            with io.AsyncFile(fileobj=f2) as af2:
+                stat1 = af1.stat()
+                res = loop.run_until_complete(
+                    io.sendfile_async(af2, af1, None, stat1.st_size))
+                self.assertEqual(res, stat1.st_size)
+
+                af1.seek(0)
+                af2.seek(0)
+                data1 = loop.run_until_complete(af1.read())
+                data2 = loop.run_until_complete(af2.read())
+                self.assertEqual(data1, data2)
 
 
 class TestBufferedReader(unittest.TestCase):
