@@ -107,8 +107,8 @@ class AsyncFile:
                                           future, read_block_size, n)
             except Exception as exc:
                 future.set_exception(exc)
-
-            future.set_result(res)
+            else:
+                future.set_result(res)
 
         return future
 
@@ -147,8 +147,8 @@ class AsyncFile:
                                       future, data, 0)
             except Exception as exc:
                 future.set_exception(exc)
-
-            future.set_result(res)
+            else:
+                future.set_result(res)
 
         return future
 
