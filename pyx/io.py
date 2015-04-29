@@ -152,6 +152,9 @@ class AsyncFile:
 
         return future
 
+    def stat(self):
+        return os.stat(self._fileobj.fileno(), follow_symlinks=True)
+
     def close(self):
         self._loop.remove_reader(self._fileobj.fileno())
         self._loop.remove_writer(self._fileobj.fileno())
