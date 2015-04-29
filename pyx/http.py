@@ -337,7 +337,7 @@ class HttpRequestCB:
             return
 
         try:
-            yield from res.handle_request(req)
+            yield from res._do_handle_request(req)
         except HttpError as e:
             yield from self._handle_http_error(req, e, traceback.format_exc())
         except:
@@ -379,6 +379,18 @@ class UrlResource:
     def handle_request(self, req):
         raise NotImplementedError('UrlResource.get_child(...) not implemented')
 
+    @asyncio.coroutine
+    def _do_handle_request(self, req):
+        if isinstance(self.handle_request, _HandleRequestDict):
+            try:
+                handler = self.handle_request[req.method]
+            except KeyError:
+                raise HttpError(501, 'Method {} not implemented for {}'.format(
+                                        req.method, self.__class__))
+            yield from handler(self, req)
+        else:
+            yield from self.handle_request(req)
+
     def traverse(self, path):
         segs = path.split('/')
         res = self
@@ -387,6 +399,30 @@ class UrlResource:
                 logger('UrlResource').debug("Traversing to resource %r", s)
                 res = res.get_child(s)
         return res
+
+
+class _HandleRequestDict(dict):
+    def methods(self, method_list):
+        assert isinstance(method_list, list) and len(method_list) > 0
+
+        def deco(handler):
+            for m in method_list:
+                self[m.upper()] = handler
+            return self
+
+        return deco
+
+
+def methods(method_list):
+    assert isinstance(method_list, list) and len(method_list) > 0
+
+    def deco(handler):
+        d = _HandleRequestDict()
+        for m in method_list:
+            d[m.upper()] = handler
+        return d
+
+    return deco
 
 
 class StaticRootResource(UrlResource):
@@ -409,6 +445,7 @@ class StaticRootResource(UrlResource):
     def _build_real_path(self):
         return os.path.join(self.root, *self.path)
 
+    @methods(['GET'])
     @asyncio.coroutine
     def handle_request(self, req):
         path = self._build_real_path()
