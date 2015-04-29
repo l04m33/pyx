@@ -4,6 +4,7 @@ import os
 import ctypes
 import errno
 import io
+from .log import logger
 
 
 class AsyncFile:
@@ -164,7 +165,43 @@ class AsyncFile:
         self._fileobj.close()
 
 
+@asyncio.coroutine
 def sendfile_async(out_f, in_f, offset, nbytes, loop=None):
+    loop = loop or asyncio.get_event_loop()
+
+    if offset is None:
+        while nbytes > 0:
+            copied = yield from _sendfile_async(out_f, in_f,
+                                                offset, nbytes, loop)
+            nbytes -= copied
+            logger('sendfile_async').debug('nbytes = %r, copied = %r', nbytes, copied)
+    else:
+        total_size = offset + nbytes
+        cur_offset = offset
+        while cur_offset < total_size:
+            logger('sendfile_async').debug('cur_offset = %r, total_size = %r', cur_offset, total_size)
+            copied = yield from _sendfile_async(out_f, in_f,
+                                                cur_offset,
+                                                total_size - cur_offset,
+                                                loop)
+            cur_offset += copied
+
+
+def _sendfile_cb(future, out_f, in_f, offset, nbytes, loop):
+    try:
+        res = os.sendfile(out_f, in_f, offset, nbytes)
+    except (BlockingIOError, InterruptedError):
+        pass
+    except Exception as exc:
+        loop.remove_writer(out_f)
+        future.set_exception(exc)
+    else:
+        loop.remove_writer(out_f)
+        future.set_result(res)
+
+
+@asyncio.coroutine
+def _sendfile_async(out_f, in_f, offset, nbytes, loop):
     def _get_fileno(f):
         if hasattr(f, 'fileno'):
             f = f.fileno()
@@ -174,22 +211,20 @@ def sendfile_async(out_f, in_f, offset, nbytes, loop=None):
 
     out_f = _get_fileno(out_f)
     in_f = _get_fileno(in_f)
-    loop = loop or asyncio.get_event_loop()
     future = asyncio.Future(loop=loop)
 
-    def _write_cb():
-        try:
-            res = os.sendfile(out_f, in_f, offset, nbytes)
-        except (BlockingIOError, InterruptedError):
-            loop.add_writer(out_f, _write_cb)
-        except Exception as exc:
-            future.set_exception(exc)
-        else:
-            future.set_result(res)
-
-    _write_cb()
+    try:
+        res = os.sendfile(out_f, in_f, offset, nbytes)
+    except (BlockingIOError, InterruptedError):
+        loop.add_writer(out_f, _sendfile_cb,
+                        future, out_f, in_f, offset, nbytes, loop)
+    except Exception as exc:
+        future.set_exception(exc)
+    else:
+        future.set_result(res)
 
     return future
+
 
 class BufferedMixin:
     def init_buffer(self):

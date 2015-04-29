@@ -65,9 +65,8 @@ class TestSendfileAsync(unittest.TestCase):
         with io.AsyncFile(fileobj=f1) as af1:
             with io.AsyncFile(fileobj=f2) as af2:
                 stat1 = af1.stat()
-                res = loop.run_until_complete(
+                loop.run_until_complete(
                     io.sendfile_async(af2, af1, None, stat1.st_size))
-                self.assertEqual(res, stat1.st_size)
 
                 af1.seek(0)
                 af2.seek(0)
