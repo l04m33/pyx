@@ -56,18 +56,21 @@ class AsyncFile:
         return self._fileobj.tell()
 
     def _read_ready(self, future, n, total):
+        if future.cancelled():
+            self._loop.remove_reader(self._fileobj.fileno())
+            return
+
         try:
             res = self._fileobj.read(n)
         except (BlockingIOError, InterruptedError):
-            self._loop.add_reader(self._fileobj.fileno(),
-                                  self._read_ready,
-                                  future, n, total)
             return
         except Exception as exc:
+            self._loop.remove_reader(self._fileobj.fileno())
             future.set_exception(exc)
             return
 
         if not res:     # EOF
+            self._loop.remove_reader(self._fileobj.fileno())
             future.set_result(bytes(self._rbuffer))
             return
 
@@ -77,6 +80,7 @@ class AsyncFile:
             more_to_go = total - len(self._rbuffer)
             if more_to_go <= 0:  # enough
                 res, self._rbuffer = self._rbuffer[:n], self._rbuffer[n:]
+                self._loop.remove_reader(self._fileobj.fileno())
                 future.set_result(bytes(res))
             else:
                 more_to_go = min(self.DEFAULT_BLOCK_SIZE, more_to_go)
@@ -84,9 +88,9 @@ class AsyncFile:
                                       self._read_ready,
                                       future, more_to_go, total)
         else:   # total < 0
-            self._loop.add_reader(self._fileobj.fileno(),
-                                  self._read_ready,
-                                  future, self.DEFAULT_BLOCK_SIZE, total)
+            # This callback is still registered with total < 0,
+            # nothing to do here
+            pass
 
     @asyncio.coroutine
     def read(self, n=-1):
@@ -117,14 +121,16 @@ class AsyncFile:
         return future
 
     def _write_ready(self, future, data, written):
+        if future.cancelled():
+            self._loop.remove_writer(self._fileobj.fileno())
+            return
+
         try:
             res = self._fileobj.write(data)
         except (BlockingIOError, InterruptedError):
-            self._loop.add_writer(self._fileobj.fileno(),
-                                  self._write_ready,
-                                  future, data, written)
             return
         except Exception as exc:
+            self._loop.remove_writer(self._fileobj.fileno())
             future.set_exception(exc)
             return
 
@@ -134,6 +140,7 @@ class AsyncFile:
                                   self._write_ready,
                                   future, data, written + res)
         else:
+            self._loop.remove_writer(self._fileobj.fileno())
             future.set_result(written + res)
 
     @asyncio.coroutine
@@ -174,12 +181,10 @@ def sendfile_async(out_f, in_f, offset, nbytes, loop=None):
             copied = yield from _sendfile_async(out_f, in_f,
                                                 offset, nbytes, loop)
             nbytes -= copied
-            logger('sendfile_async').debug('nbytes = %r, copied = %r', nbytes, copied)
     else:
         total_size = offset + nbytes
         cur_offset = offset
         while cur_offset < total_size:
-            logger('sendfile_async').debug('cur_offset = %r, total_size = %r', cur_offset, total_size)
             copied = yield from _sendfile_async(out_f, in_f,
                                                 cur_offset,
                                                 total_size - cur_offset,
@@ -188,6 +193,10 @@ def sendfile_async(out_f, in_f, offset, nbytes, loop=None):
 
 
 def _sendfile_cb(future, out_f, in_f, offset, nbytes, loop):
+    if future.cancelled():
+        loop.remove_writer(out_f)
+        return
+
     try:
         res = os.sendfile(out_f, in_f, offset, nbytes)
     except (BlockingIOError, InterruptedError):
