@@ -229,6 +229,13 @@ class TestBoundaryReader(unittest.TestCase):
         data = loop.run_until_complete(br.readline())
         self.assertEqual(data, b'padding\r\n')
 
+        sr.feed_data(
+            b'0123456789'
+            b'0123456789'
+            b'0123456789'
+            b'0123456789'
+            b'0123456789'
+            b'0123456789')
         sr.feed_data(b'\r\n----thisistheboundary--\r\n')
         sr.feed_eof()
 
@@ -239,5 +246,82 @@ class TestBoundaryReader(unittest.TestCase):
         self.assertEqual(data,
                          b'padding\r\n'
                          b'more padding 2\r\n')
+        # A read longer than (len(boundary) * 2)
+        data = loop.run_until_complete(lr.read(55))
+        self.assertEqual(data,
+            b'0123456789'
+            b'0123456789'
+            b'0123456789'
+            b'0123456789'
+            b'0123456789'
+            b'01234')
+        data = loop.run_until_complete(lr.read(6))
+        self.assertEqual(data, b'56789')
         data = loop.run_until_complete(br.read())
         self.assertEqual(data, b'')
+
+    def test_read_exactly(self):
+        loop = asyncio.get_event_loop()
+        sr = asyncio.StreamReader(loop=loop)
+        br = io.BufferedReader(sr)
+
+        sr.feed_data(
+            b'1 2 3 4 5 6 \r\n'
+            b'----thisistheboundary'
+            b'padding\r\n'
+            b'more padding\r\n'
+            b'more padding 2\r\n')
+        sr.feed_eof()
+
+        lr = io.BoundaryReader(br, b'--thisistheboundary')
+        data = loop.run_until_complete(lr.readexactly(8))
+        self.assertEqual(data, b'1 2 3 4 ')
+        with self.assertRaises(asyncio.IncompleteReadError):
+            loop.run_until_complete(lr.readexactly(8))
+
+    def test_readline(self):
+        loop = asyncio.get_event_loop()
+        sr = asyncio.StreamReader(loop=loop)
+        br = io.BufferedReader(sr)
+
+        sr.feed_data(
+            b'\r\n'
+            b'----thisistheboundary'
+            b'padding\r\n')
+
+        lr = io.BoundaryReader(br, b'--thisistheboundary')
+        data = loop.run_until_complete(lr.readline())
+        self.assertEqual(data, b'')
+        data = loop.run_until_complete(lr.readline())
+        self.assertEqual(data, b'')
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'padding\r\n')
+
+        sr.feed_data(
+            b'no boundary\r\n'
+            b'and no new line')
+        sr.feed_eof()
+        lr = io.BoundaryReader(br, b'--thisistheboundary')
+        data = loop.run_until_complete(lr.readline())
+        self.assertEqual(data, b'no boundary\r\n')
+        data = loop.run_until_complete(lr.readline())
+        self.assertEqual(data, b'and no new line')
+
+        sr = asyncio.StreamReader(loop=loop)
+        br = io.BufferedReader(sr)
+        sr.feed_data(
+            b'line 1\r\n'
+            b'line 2\r\n'
+            b'\r\n'
+            b'----thisistheboundary--\r\n'
+            b'padding')
+        sr.feed_eof()
+        lr = io.BoundaryReader(br, b'--thisistheboundary')
+        data = loop.run_until_complete(lr.readline())
+        self.assertEqual(data, b'line 1\r\n')
+        data = loop.run_until_complete(lr.readline())
+        self.assertEqual(data, b'line 2\r\n')
+        data = loop.run_until_complete(lr.readline())
+        self.assertEqual(data, b'')
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'padding')

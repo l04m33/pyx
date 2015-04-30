@@ -382,7 +382,24 @@ class BoundaryReader(BaseReader):
 
     @asyncio.coroutine
     def readline(self):
-        pass
+        if self._hit_boundary:
+            return b''
+        else:
+            # The boundary starts with '\r\n', so it always come up between
+            # two lines
+            line = yield from self._reader.readline()
+            line2 = yield from self._reader.readline()
+            buf = b''.join([line, line2])
+
+            bd_idx = buf.find(self._boundary)
+            if bd_idx >= 0:
+                self._hit_boundary = True
+                _has_trailer, buf = \
+                    yield from self._strip_boundary(buf, bd_idx)
+                return buf
+
+            self._reader.put(line2)
+            return line
 
     @asyncio.coroutine
     def _read_next_block(self, n, buf):
@@ -396,6 +413,27 @@ class BoundaryReader(BaseReader):
                 to_read = remaining
 
         return (yield from self._reader.read(to_read))
+
+    @asyncio.coroutine
+    def _strip_boundary(self, buf, bd_idx):
+        # len(buf) is ALWAYS larger than 4, since len(self._boundary) > 4
+        if bd_idx + len(self._boundary) > len(buf) - 4:
+            # Also read the trailing '--\r\n', if any
+            padding = yield from self._reader.read(4)
+            buf.extend(padding)
+
+        # See if these 4 bytes are '--\r\n' (the trailing sequence
+        # of the ending boundary). If so, discard them together with
+        # the boundary string
+        search_idx = bd_idx + len(self._boundary)
+        if buf[search_idx:(search_idx+4)] == b'--\r\n':
+            self._reader.put(buf[(search_idx+4):])
+            has_trailer = True
+        else:
+            self._reader.put(buf[search_idx:])
+            has_trailer = False
+
+        return (has_trailer, buf[0:bd_idx])
 
     @asyncio.coroutine
     def read(self, n=-1):
@@ -423,25 +461,11 @@ class BoundaryReader(BaseReader):
                 #    Else repeat step 1.
                 if bd_idx >= 0:
                     self._hit_boundary = True
-
-                    # len(buf) is ALWAYS larger than 4, since len(self._boundary) > 4
-                    if bd_idx + len(self._boundary) > len(buf) - 4:
-                        # Also read the trailing '--\r\n', if any
-                        padding = yield from self._reader.read(4)
-                        buf.extend(padding)
-
-                    # See if these 4 bytes are '--\r\n' (the trailing sequence
-                    # of the ending boundary). If so, discard them together with
-                    # the boundary string
-                    search_idx = bd_idx + len(self._boundary)
-                    if buf[search_idx:(search_idx+4)] == b'--\r\n':
-                        self._reader.put(buf[(search_idx+4):])
-                    else:
-                        self._reader.put(buf[search_idx:])
-                    buf = buf[0:bd_idx]
+                    _has_trailer, buf = \
+                        yield from self._strip_boundary(buf, bd_idx)
                     break
-                else:
-                    data = yield from self._read_next_block(n, buf)
+
+                data = yield from self._read_next_block(n, buf)
 
             if not self._hit_boundary:
                 # We stopped before seeing the boundary string, and `data`
@@ -464,7 +488,7 @@ class BoundaryReader(BaseReader):
         while readn < n:
             data = yield from self.read(n - readn)
             if not data:    # EOF
-                raise asyncio.IncompleteReadError(n, b''.join(buf))
+                raise asyncio.IncompleteReadError(b''.join(buf), n)
             readn += len(data)
             buf.append(data)
         return b''.join(buf)
