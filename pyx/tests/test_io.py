@@ -205,3 +205,39 @@ class TestLengthReader(unittest.TestCase):
         lr.put(data2)
         data = loop.run_until_complete(lr.read())
         self.assertEqual(data, b'3 4 1 2 5 ')
+
+
+class TestBoundaryReader(unittest.TestCase):
+    def test_read(self):
+        loop = asyncio.get_event_loop()
+        sr = asyncio.StreamReader(loop=loop)
+        br = io.BufferedReader(sr)
+
+        sr.feed_data(
+            b'1 2 3 4 5 6 \r\n'
+            b'----thisistheboundary'
+            b'padding\r\n'
+            b'more padding\r\n'
+            b'more padding 2\r\n')
+
+        lr = io.BoundaryReader(br, b'--thisistheboundary')
+        data = loop.run_until_complete(lr.read())
+        self.assertEqual(data, b'1 2 3 4 5 6 ')
+        data = loop.run_until_complete(lr.read(2))
+        self.assertEqual(data, b'')
+
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'padding\r\n')
+
+        sr.feed_data(b'\r\n----thisistheboundary--\r\n')
+        sr.feed_eof()
+
+        lr = io.BoundaryReader(br, b'--thisistheboundary')
+        data = loop.run_until_complete(lr.read(5))
+        self.assertEqual(data, b'more ')
+        data = loop.run_until_complete(lr.read(25))
+        self.assertEqual(data,
+                         b'padding\r\n'
+                         b'more padding 2\r\n')
+        data = loop.run_until_complete(br.read())
+        self.assertEqual(data, b'')

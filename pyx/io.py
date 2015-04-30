@@ -365,3 +365,106 @@ class LengthReader(BaseReader):
             return data
         else:
             raise asyncio.IncompleteReadError(b'', n)
+
+
+class BoundaryReader(BaseReader):
+    DEFAULT_BLOCK_SIZE = 8192
+
+    def __init__(self, reader, boundary):
+        super().__init__(reader)
+
+        assert isinstance(boundary, bytes) and (len(boundary) > 0)
+        self._boundary = b'\r\n--' + boundary
+        self._hit_boundary = False
+
+    def put(self, data):
+        self._reader.put(data)
+
+    @asyncio.coroutine
+    def readline(self):
+        pass
+
+    @asyncio.coroutine
+    def _read_next_block(self, n, buf):
+        if n < 0:
+            to_read = self.DEFAULT_BLOCK_SIZE
+        else:
+            remaining = max(n - len(buf), 0)
+            if remaining < len(self._boundary) * 2:
+                to_read = remaining + len(self._boundary)
+            else:
+                to_read = remaining
+
+        return (yield from self._reader.read(to_read))
+
+    @asyncio.coroutine
+    def read(self, n=-1):
+        if self._hit_boundary:
+            return b''
+
+        else:
+            buf = bytearray()
+            # 1. Read at least (len(boundary) + 1) bytes
+            data = yield from self._read_next_block(n, buf)
+            # 2. If we hit EOF or have enough bytes already, stop.
+            #    Here we want at least (n + len(boundary)) bytes in the buffer
+            #    so that we can ensure the first n bytes are not part of the
+            #    boundary
+            while len(data) > 0 and \
+                    (n < 0 or len(buf) < n + len(self._boundary)):
+                buf.extend(data)
+                # Only search the data we just read
+                search_idx = \
+                    max(len(buf) - len(data) - (len(self._boundary) - 1), 0)
+                bd_idx = buf.find(self._boundary, search_idx)
+
+                # 3. See if we have found the boundary string in buf.
+                #    If the boundary is found, no more data shall be read.
+                #    Else repeat step 1.
+                if bd_idx >= 0:
+                    self._hit_boundary = True
+
+                    # len(buf) is ALWAYS larger than 4, since len(self._boundary) > 4
+                    if bd_idx + len(self._boundary) > len(buf) - 4:
+                        # Also read the trailing '--\r\n', if any
+                        padding = yield from self._reader.read(4)
+                        buf.extend(padding)
+
+                    # See if these 4 bytes are '--\r\n' (the trailing sequence
+                    # of the ending boundary). If so, discard them together with
+                    # the boundary string
+                    search_idx = bd_idx + len(self._boundary)
+                    if buf[search_idx:(search_idx+4)] == b'--\r\n':
+                        self._reader.put(buf[(search_idx+4):])
+                    else:
+                        self._reader.put(buf[search_idx:])
+                    buf = buf[0:bd_idx]
+                    break
+                else:
+                    data = yield from self._read_next_block(n, buf)
+
+            if not self._hit_boundary:
+                # We stopped before seeing the boundary string, and `data`
+                # contains the last bunch of bytes we read
+                buf.extend(data)
+
+            if n >= 0 and len(buf) > n:
+                self._reader.put(buf[n:])
+                buf = buf[0:n]
+
+            return bytes(buf)
+
+    @asyncio.coroutine
+    def readexactly(self, n):
+        if n < 0:
+            return b''
+
+        buf = []
+        readn = 0
+        while readn < n:
+            data = yield from self.read(n - readn)
+            if not data:    # EOF
+                raise asyncio.IncompleteReadError(n, b''.join(buf))
+            readn += len(data)
+            buf.append(data)
+        return b''.join(buf)
