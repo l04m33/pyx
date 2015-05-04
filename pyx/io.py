@@ -429,6 +429,9 @@ class BoundaryReader(BaseReader):
         if buf[search_idx:(search_idx+4)] == b'--\r\n':
             self._reader.put(buf[(search_idx+4):])
             has_trailer = True
+        elif buf[search_idx:(search_idx+2)] == b'\r\n':
+            self._reader.put(buf[(search_idx+2):])
+            has_trailer = False
         else:
             self._reader.put(buf[search_idx:])
             has_trailer = False

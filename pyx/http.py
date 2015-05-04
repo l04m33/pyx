@@ -112,6 +112,18 @@ class HttpConnection:
 HttpHeader = collections.namedtuple('HttpHeader', ['key', 'value'])
 
 
+def parse_http_header(header_line):
+    header_line = header_line.decode().strip()
+    col_idx = header_line.find(':')
+
+    if col_idx < 1:
+        raise BadHttpHeaderError('Bad header: {}'.format(repr(header_line)))
+
+    key = header_line[0:col_idx].strip()
+    value = header_line[(col_idx+1):].strip()
+    return HttpHeader(key=key, value=value)
+
+
 class HttpMessage:
     def __init__(self, conn):
         self.connection = conn
@@ -182,15 +194,7 @@ class HttpRequest(HttpMessage):
             self.version = (majorVersion, minorVersion)
 
     def _parse_header(self, header_line):
-        header_line = header_line.decode().strip()
-        col_idx = header_line.find(':')
-
-        if col_idx < 1:
-            raise BadHttpHeaderError('Bad header: {}'.format(repr(header_line)))
-
-        key = header_line[0:col_idx].strip()
-        value = header_line[(col_idx+1):].strip()
-        self.headers.append(HttpHeader(key=key, value=value))
+        self.headers.append(parse_http_header(header_line))
 
     def respond(self, code):
         # TODO: respect encodings etc. in the request

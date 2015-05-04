@@ -215,7 +215,7 @@ class TestBoundaryReader(unittest.TestCase):
 
         sr.feed_data(
             b'1 2 3 4 5 6 \r\n'
-            b'----thisistheboundary'
+            b'----thisistheboundary\r\n'
             b'padding\r\n'
             b'more padding\r\n'
             b'more padding 2\r\n')
