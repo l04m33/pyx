@@ -31,7 +31,7 @@ import mimetypes
 import os
 import traceback
 from .log import logger
-from .io import (AsyncFile, sendfile_async)
+from .io import (AsyncFile, sendfile_async, BoundaryReader)
 
 
 class BadHttpRequestError(Exception):
@@ -124,25 +124,33 @@ def parse_http_header(header_line):
     return HttpHeader(key=key, value=value)
 
 
+def get_kv(kv_list, key):
+    upper_key = key.upper()
+    vlist = []
+    for i in kv_list:
+        if i.key.upper() == upper_key:
+            vlist.append(i.value)
+    return vlist
+
+
+def get_first_kv(kv_list, key):
+    upper_key = key.upper()
+    for i in kv_list:
+        if i.key.upper() == upper_key:
+            return i.value
+    return None
+
+
 class HttpMessage:
     def __init__(self, conn):
         self.connection = conn
         self.headers = []
 
     def get_header(self, key):
-        upper_key = key.upper()
-        vlist = []
-        for i in self.headers:
-            if i.key.upper() == upper_key:
-                vlist.append(i.value)
-        return vlist
+        return get_kv(self.headers, key)
 
     def get_first_header(self, key):
-        upper_key = key.upper()
-        for i in self.headers:
-            if i.key.upper() == upper_key:
-                return i.value
-        return None
+        return get_first_kv(self.headers, key)
 
     def write_headers(self):
         hlist = []
@@ -472,3 +480,30 @@ class StaticRootResource(UrlResource):
                 yield from sendfile_async(sock, af, None, file_size)
         else:
             raise HttpError(404, '{} not found'.format(repr(path)))
+
+
+@asyncio.coroutine
+def parse_multipart_formdata(reader, boundary, cb):
+    breader = BoundaryReader(reader, boundary)
+    # The BoundaryReader expects a new line before the boundary string,
+    # We make sure the new line exists
+    breader.put(b'\r\n')
+    # Clean up garbage before the first boundary
+    _dummy_data = yield from breader.read()
+    logger('parse_multipart_formdata').debug('_dummy_data = %r', _dummy_data)
+    del _dummy_data
+
+    breader = BoundaryReader(reader, boundary)
+    line = yield from breader.readline()
+    while line:
+        headers = []
+        while line.strip():
+            header = parse_http_header(line)
+            headers.append(header)
+            line = yield from breader.readline()
+
+        yield from cb(headers, breader)
+
+        yield from breader.read()
+        breader = BoundaryReader(reader, boundary)
+        line = yield from breader.readline()
