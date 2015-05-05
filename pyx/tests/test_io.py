@@ -137,6 +137,30 @@ class TestBufferedReader(unittest.TestCase):
         with self.assertRaises(asyncio.IncompleteReadError):
             loop.run_until_complete(br.readexactly(12))
 
+    def test_readline(self):
+        loop = asyncio.get_event_loop()
+        sr = asyncio.StreamReader(loop=loop)
+        br = io.BufferedReader(sr)
+
+        sr.feed_data(b'test data 1\r\n')
+        sr.feed_data(b'test data 2\r\n')
+        sr.feed_data(b'test data 3')
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'test data 1\r\n')
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'test data 2\r\n')
+
+        br.put(b'test data 5\r\n')
+        br.put(b'test data 4\r\n')
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'test data 4\r\n')
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'test data 5\r\n')
+
+        sr.feed_eof()
+        data = loop.run_until_complete(br.readline())
+        self.assertEqual(data, b'test data 3')
+
 
 class TestLengthReader(unittest.TestCase):
     def test_read(self):

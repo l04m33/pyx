@@ -240,6 +240,7 @@ class BufferedMixin:
         self._buffer = []
 
     def flush_buffer(self):
+        self._buffer.reverse()
         buffered = b''.join(self._buffer)
         self._buffer = []
         return buffered
