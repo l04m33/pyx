@@ -11,6 +11,9 @@ from .log import logger
 from .http import (HttpConnectionCB, HttpRequestCB, StaticRootResource)
 
 
+__all__ = ['main']
+
+
 def _parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('-r', '--root',

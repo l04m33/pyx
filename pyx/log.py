@@ -1,6 +1,9 @@
 import logging
 
 
+__all__ = ['logger']
+
+
 def logger(name=""):
     if name == '':
         name = __package__

@@ -13,6 +13,10 @@ import io
 from .log import logger
 
 
+__all__ = ['AsyncFile', 'sendfile_async', 'BufferedMixin',
+           'BaseReader', 'BufferedReader', 'LengthReader', 'BoundaryReader']
+
+
 class AsyncFile:
     """A local file class for use with the ``asyncio`` module.
 
