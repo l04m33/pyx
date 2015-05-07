@@ -33,6 +33,7 @@ import os
 import traceback
 from .log import logger
 from .io import (AsyncFile, sendfile_async, BoundaryReader)
+from .version import __version__
 
 
 __all__ = ['BadHttpRequestError', 'BadHttpHeaderError', 'HttpError',
@@ -329,7 +330,7 @@ class HttpResponse(HttpMessage):
         self.code = code
         self.protocol = 'HTTP'
         self.version = (1, 1)
-        self.headers = [HttpHeader('Server', 'Pyx 0.1.0')]
+        self.headers = [HttpHeader('Server', 'Pyx ' + __version__)]
 
     def write(self):
         """Construct the response header.
