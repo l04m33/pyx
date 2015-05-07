@@ -27,16 +27,19 @@ def get_version(fname):
 
 setup(
     name=PACKAGE_NAME,
+    packages=[PACKAGE_NAME],
     version=get_version('{}/version.py'.format(PACKAGE_NAME)),
     description='Yet another async web server',
     long_description=load_description('readme.rst'),
     classifiers=[
         'License :: OSI Approved :: MIT License',
+        'Programming Language :: Python :: 3.4',
     ],
-    keywords='http web server',
+    keywords=['http', 'web', 'server'],
     author='Kay Zheng',
     author_email='l04m33@gmail.com',
-    license='MIT',
+    url='https://github.com/l04m33/pyx',
+    license='http://l04m33.mit-license.org/',
     zip_safe=False,
     install_requires=[],
     extras_require={
