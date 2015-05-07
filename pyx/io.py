@@ -1,3 +1,9 @@
+"""
+I/O related routines & classes.
+
+"""
+
+
 import asyncio
 import fcntl
 import os
@@ -8,6 +14,20 @@ from .log import logger
 
 
 class AsyncFile:
+    """A local file class for use with the ``asyncio`` module.
+
+    ``loop`` should be the event loop in use.
+    ``filename`` is the name of the file to be opened.
+    ``fileobj`` should be a regular file-like object.
+    ``mode`` is the open mode accepted by built-in function ``open``.
+
+    If ``filename`` is specified, the named file will be opened. And if
+    ``fileobj`` is specified, that file object will be used directly. You
+    cannot specify both ``filename`` and ``fileobj``.
+
+    This class can be used in a ``with`` statement.
+    """
+
     DEFAULT_BLOCK_SIZE = 8192
 
     def __init__(self, loop=None, filename=None,
@@ -174,6 +194,11 @@ class AsyncFile:
 
 @asyncio.coroutine
 def sendfile_async(out_f, in_f, offset, nbytes, loop=None):
+    """The async version of ``os.sendfile(...)``.
+
+    ``out_f`` and ``in_f`` can be any object with a ``fileno()`` method, but
+    they must all be set to async mode beforehand.
+    """
     loop = loop or asyncio.get_event_loop()
 
     if offset is None:
@@ -236,6 +261,8 @@ def _sendfile_async(out_f, in_f, offset, nbytes, loop):
 
 
 class BufferedMixin:
+    """A mixin providing buffered semantics."""
+
     def init_buffer(self):
         self._buffer = []
 
@@ -269,11 +296,15 @@ class BufferedMixin:
 
 
 class BaseReader:
+    """Base class for readers."""
+
     def __init__(self, reader):
         self._reader = reader
 
 
 class BufferedReader(BaseReader, BufferedMixin):
+    """A reader with buffered semantics."""
+
     def __init__(self, reader):
         super().__init__(reader)
         self.init_buffer()
@@ -312,6 +343,8 @@ class BufferedReader(BaseReader, BufferedMixin):
 
 
 class LengthReader(BaseReader):
+    """A reader that reads at most ``length`` bytes."""
+
     def __init__(self, reader, length):
         super().__init__(reader)
 
@@ -369,6 +402,8 @@ class LengthReader(BaseReader):
 
 
 class BoundaryReader(BaseReader):
+    """A reader that reads until the string ``boundary`` is encountered."""
+
     DEFAULT_BLOCK_SIZE = 8192
 
     def __init__(self, reader, boundary):
