@@ -1,4 +1,5 @@
-"""Routines & classes that are related to HTTP protocol processing.
+"""
+Routines & classes that are related to HTTP protocol processing.
 
 A basic HTTP server can be assembled in a simple way::
 
@@ -78,6 +79,14 @@ status_messages = {
 
 
 class HttpConnection:
+    """Connection level data & operations.
+
+    ``reader`` should be an ``asyncio.StreamReader``, or implementing the same
+    interface.
+    ``writer`` should be an ``asyncio.StreamWriter``, or implementing the same
+    interface.
+    """
+
     def __init__(self, reader, writer):
         self._reader = reader
         self._writer = writer
@@ -85,27 +94,33 @@ class HttpConnection:
 
     @property
     def closed(self):
+        """True if ``close()`` has been called."""
         return self._closed
 
     def close(self):
+        """Close this connection."""
         logger('HttpConnection').debug('Closing connection....')
         self.writer.close()
         self._closed = True
 
     @property
     def reader(self):
+        """The reader for this connection."""
         return self._reader
 
     @reader.setter
     def reader(self, new_reader):
+        """Sets a new reader for this connection."""
         self._reader = new_reader
 
     @property
     def writer(self):
+        """The writer for this connection."""
         return self._writer
 
     @writer.setter
     def writer(self, new_writer):
+        """Sets a new writer for this connection."""
         self._writer = new_writer
 
 
@@ -113,6 +128,12 @@ HttpHeader = collections.namedtuple('HttpHeader', ['key', 'value'])
 
 
 def parse_http_header(header_line):
+    """Parse an HTTP header from a string, and return an ``HttpHeader``.
+
+    ``header_line`` should only contain one line.
+    ``BadHttpHeaderError`` is raised if the string is an invalid header line.
+    """
+
     header_line = header_line.decode().strip()
     col_idx = header_line.find(':')
 
@@ -142,17 +163,32 @@ def get_first_kv(kv_list, key):
 
 
 class HttpMessage:
+    """Base class for requests and responses."""
+
     def __init__(self, conn):
         self.connection = conn
         self.headers = []
 
     def get_header(self, key):
+        """Search for a header, and return the values as a list.
+
+        ``key`` is case-insensitive.
+        Note that some HTTP requests may contain multiple headers with the same
+        name, so this method returns a lisst.
+        """
         return get_kv(self.headers, key)
 
     def get_first_header(self, key):
+        """Search for a header, and return the first encountered value.
+
+        ``key`` is case-insensitive.
+        """
         return get_first_kv(self.headers, key)
 
     def write_headers(self):
+        """Construct headers in string form, and return a list containing each
+        line of header strings.
+        """
         hlist = []
         for h in self.headers:
             hlist.append("{}: {}".format(h.key, h.value))
@@ -160,6 +196,23 @@ class HttpMessage:
 
 
 class HttpRequest(HttpMessage):
+    """An HTTP request.
+
+    You should use the class method ``HttpRequest.parse(conn)`` to read a
+    request from the connection, instead of invoking the constructor of this
+    class directly.
+
+    When successfully parsed, an ``HttpRequest`` consists of these data
+    members:
+
+        ``method``:   The Http method.
+        ``path``:     The requesting path from the URL.
+        ``query``:    The query string from the URL, None if no query exists.
+        ``version``:  HTTP version, as a tuple (major, minor)
+        ``protocol``: Should always be "HTTP"
+        ``headers``:  HTTP headers for this request.
+    """
+
     def __init__(self, conn):
         super().__init__(conn)
         self._responded = False
@@ -205,6 +258,14 @@ class HttpRequest(HttpMessage):
         self.headers.append(parse_http_header(header_line))
 
     def respond(self, code):
+        """Starts a response.
+
+        ``code`` is an integer standing for standard HTTP status code.
+
+        This method will automatically adjust the response to adapt to request
+        parameters, such as "Accept-Encoding" and "TE".
+        """
+
         # TODO: respect encodings etc. in the request
         resp = HttpResponse(code, self.connection)
         resp.request = self
@@ -214,6 +275,7 @@ class HttpRequest(HttpMessage):
 
     @property
     def responded(self):
+        """True if ``HttpResponse.send(...)`` is called."""
         return self._responded
 
     @responded.setter
@@ -224,6 +286,11 @@ class HttpRequest(HttpMessage):
     @classmethod
     @asyncio.coroutine
     def parse(cls, conn):
+        """Read a request from the HTTP connection ``conn``.
+
+        May raise ``BadHttpRequestError``.
+        """
+
         req = cls(conn)
         req_line = yield from conn.reader.readline()
         logger('HttpRequest').debug('req_line = %r', req_line)
@@ -241,6 +308,12 @@ class HttpRequest(HttpMessage):
 
 
 class HttpResponse(HttpMessage):
+    """An HTTP response.
+
+    You should use ``HttpRequest.respond(...)`` to start a response, instead
+    of invoking the constructor of this class directly.
+    """
+
     def __init__(self, code, conn):
         super().__init__(conn)
         self.code = code
@@ -249,6 +322,12 @@ class HttpResponse(HttpMessage):
         self.headers = [HttpHeader('Server', 'Pyx 0.1.0')]
 
     def write(self):
+        """Construct the response header.
+
+        The return value is a list containing the whole response header, with
+        each line as a list element.
+        """
+
         slist = []
         slist.append('{}/{}.{} {} {}'.format(
                         self.protocol,
@@ -265,6 +344,10 @@ class HttpResponse(HttpMessage):
 
     @asyncio.coroutine
     def send(self):
+        """Send the response header, including the status line and all the
+        HTTP headers.
+        """
+
         if hasattr(self, 'request'):
             self.request.responded = True
         self.connection.writer.write(str(self).encode())
@@ -272,6 +355,11 @@ class HttpResponse(HttpMessage):
 
     @asyncio.coroutine
     def send_body(self, data):
+        """Send the response body.
+
+        ``data`` should be a bytes-like object or a string.
+        """
+
         if type(data) is str:
             data = data.encode()
         self.connection.writer.write(data)
@@ -279,6 +367,8 @@ class HttpResponse(HttpMessage):
 
 
 def default_error_page(code):
+    """The default template for error pages."""
+
     return """
 <html>
     <head>
@@ -295,6 +385,12 @@ def default_error_page(code):
 
 
 class DefaultHttpErrorHandler:
+    """Display an error page when an ``HttpError`` is detected.
+
+    ``error_page`` should be a function which accepts the HTTP status code
+    and returns the content of the error page. See ``default_error_page``.
+    """
+
     def __init__(self, error_page=default_error_page):
         self._gen_error_page = error_page
 
@@ -312,6 +408,17 @@ _default_error_handler = DefaultHttpErrorHandler()
 
 
 class HttpRequestCB:
+    """Default request callback for ``HttpConnectionCB``.
+
+    This callback routine handles path traversal and exceptions raised by
+    ``UrlResource`` objects.
+
+    ``root_factory`` is a factory callable which produces a root object for
+    path traversal.
+    The optional argument ``error_handler`` should be a callable that can
+    handle ``HttpError``. See ``DefaultHttpErrorHandler``.
+    """
+
     def __init__(self, root_factory, error_handler=_default_error_handler):
         self._root_factory = root_factory
         self._error_handler = error_handler
@@ -357,6 +464,11 @@ class HttpRequestCB:
 
 
 class HttpConnectionCB:
+    """Default callback for use with ``asyncio.start_server(...)``.
+
+    ``req_cb`` should be a callable for handling HTTP requests. See
+    ``HttpRequestCB``.
+    """
     def __init__(self, req_cb):
         self._request_cb = req_cb
 
@@ -385,6 +497,11 @@ class HttpConnectionCB:
 
 
 class UrlResource:
+    """Base class for path traversal objects.
+
+    You should write subclasses and implement the methods ``get_child`` and
+    ``handle_request``, instead of using this class directly.
+    """
     def get_child(self, key):
         raise NotImplementedError('UrlResource.get_child(...) not implemented')
 
@@ -426,6 +543,25 @@ class _HandleRequestDict(dict):
 
 
 def methods(method_list):
+    """A decorator to mark HTTP methods a resource can handle.
+
+    For example::
+
+        class SomeRes(UrlResource):
+            ...
+            @methods(['GET', 'HEAD'])
+            def handle_request(self, req):
+                ...
+            @handle_request.methods(['POST'])
+            def handle_post(self, req):
+                ...
+
+    In this case, GET and HEAD requests will be dispatched to
+    ``handle_request``, and POST requests will be dispatched to
+    ``handle_post``. All other request methods will cause a
+    *501 Not Implemented* error.
+    """
+
     assert isinstance(method_list, list) and len(method_list) > 0
 
     def deco(handler):
@@ -438,6 +574,11 @@ def methods(method_list):
 
 
 class StaticRootResource(UrlResource):
+    """A resource class for serving static files.
+
+    ``local_root`` is the local directory for your static files.
+    """
+
     def __init__(self, local_root):
         super().__init__()
         self.root = local_root
@@ -484,6 +625,13 @@ class StaticRootResource(UrlResource):
 
 @asyncio.coroutine
 def parse_multipart_formdata(reader, boundary, cb):
+    """Read data from ``reader`` and parse multipart/form-data fields.
+
+    ``boundary`` is the multipart/form-data boundary.
+    ``cb`` is a callable that will be called as ``cb(headers, reader)`` to
+    handle the parsed field.
+    """
+
     breader = BoundaryReader(reader, boundary)
     # The BoundaryReader expects a new line before the boundary string,
     # We make sure the new line exists
