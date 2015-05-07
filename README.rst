@@ -18,7 +18,7 @@ Just use pip or tools alike:
 
 .. code-block:: sh
 
-    pip install pyx
+    pip install pyxserver
 
 ################
 What can Pyx do?
@@ -39,7 +39,7 @@ own dynamic web application:
 .. code-block:: python
 
     import asyncio
-    from pyx.http import (HttpHeader, HttpConnectionCB)
+    from pyx import (HttpHeader, HttpConnectionCB)
 
     @asyncio.coroutine
     def req_cb(req):

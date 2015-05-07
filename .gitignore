@@ -1,4 +1,4 @@
-pyx.egg-info
+*.egg-info
 cover
 .coverage
 *.pyc

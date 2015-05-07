@@ -26,7 +26,7 @@ def get_version(fname):
 
 
 setup(
-    name=PACKAGE_NAME,
+    name='pyxserver',
     packages=[PACKAGE_NAME],
     version=get_version('{}/version.py'.format(PACKAGE_NAME)),
     description='Yet another async web server',
