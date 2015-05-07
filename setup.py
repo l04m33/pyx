@@ -27,7 +27,7 @@ def get_version(fname):
 
 setup(
     name='pyxserver',
-    packages=[PACKAGE_NAME],
+    packages=['pyx', 'pyx.tests'],
     version=get_version('{}/version.py'.format(PACKAGE_NAME)),
     description='Yet another async web server',
     long_description=load_description('README.rst'),
