@@ -30,7 +30,7 @@ setup(
     packages=[PACKAGE_NAME],
     version=get_version('{}/version.py'.format(PACKAGE_NAME)),
     description='Yet another async web server',
-    long_description=load_description('readme.rst'),
+    long_description=load_description('README.rst'),
     classifiers=[
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3.4',
