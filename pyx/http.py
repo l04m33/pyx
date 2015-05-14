@@ -30,6 +30,7 @@ import collections
 import urllib
 import mimetypes
 import os
+import glob
 import traceback
 from .log import logger
 from .io import (AsyncFile, sendfile_async, BoundaryReader)
@@ -83,6 +84,7 @@ status_messages = {
     200: "OK",
     303: "See Other",
     400: "Bad Request",
+    403: "Forbidden",
     404: "Not Found",
     500: "Internal Error",
     501: "Not Implemented",
@@ -590,6 +592,8 @@ class StaticRootResource(UrlResource):
     ``local_root`` is the local directory for your static files.
     """
 
+    INDEX_NAMES = ['index.html', 'index.htm']
+
     def __init__(self, local_root):
         super().__init__()
         self.root = local_root
@@ -609,6 +613,22 @@ class StaticRootResource(UrlResource):
     def _build_real_path(self):
         return os.path.join(self.root, *self.path)
 
+    @asyncio.coroutine
+    def _serve_file(self, req, path):
+        logger('StaticRootResource').debug('Serving file: %r', path)
+        with AsyncFile(filename=path) as af:
+            resp = req.respond(200)
+
+            file_size = af.stat().st_size
+            resp.headers.append(HttpHeader('Content-Length', file_size))
+            mimetype, _encoding = mimetypes.guess_type(path)
+            if mimetype is not None:
+                resp.headers.append(HttpHeader('Content-Type', mimetype))
+
+            yield from resp.send()
+            sock = resp.connection.writer.get_extra_info('socket')
+            yield from sendfile_async(sock, af, None, file_size)
+
     @methods(['GET'])
     @asyncio.coroutine
     def handle_request(self, req):
@@ -617,19 +637,23 @@ class StaticRootResource(UrlResource):
         logger('StaticRootResource').debug('path = %r', path)
 
         if os.path.isfile(path):
-
-            with AsyncFile(filename=path) as af:
-                resp = req.respond(200)
-
-                file_size = af.stat().st_size
-                resp.headers.append(HttpHeader('Content-Length', file_size))
-                mimetype, _encoding = mimetypes.guess_type(path)
-                if mimetype is not None:
-                    resp.headers.append(HttpHeader('Content-Type', mimetype))
-
-                yield from resp.send()
-                sock = resp.connection.writer.get_extra_info('socket')
-                yield from sendfile_async(sock, af, None, file_size)
+            yield from self._serve_file(req, path)
+        elif os.path.isdir(path):
+            glob_pattern = os.path.join(path, '*')
+            real_index = None
+            for f in glob.iglob(glob_pattern):
+                base_name = os.path.basename(f).lower()
+                if base_name in self.INDEX_NAMES and os.path.isfile(f):
+                    if os.access(f, os.R_OK):
+                        real_index = f
+                        break
+                    else:
+                        raise HttpError(
+                            403, 'Access to {} denied'.format(repr(path)))
+            if real_index is not None:
+                yield from self._serve_file(req, real_index)
+            else:
+                raise HttpError(404, '{} not found'.format(repr(path)))
         else:
             raise HttpError(404, '{} not found'.format(repr(path)))
 
