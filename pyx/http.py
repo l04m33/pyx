@@ -627,7 +627,7 @@ class StaticRootResource(UrlResource):
 
             yield from resp.send()
             sock = resp.connection.writer.get_extra_info('socket')
-            yield from sendfile_async(sock, af, None, file_size)
+            yield from sendfile_async(sock, af, 0, file_size)
 
     @methods(['GET'])
     @asyncio.coroutine
