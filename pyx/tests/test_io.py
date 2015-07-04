@@ -66,7 +66,7 @@ class TestSendfileAsync(unittest.TestCase):
             with io.AsyncFile(fileobj=f2) as af2:
                 stat1 = af1.stat()
                 loop.run_until_complete(
-                    io.sendfile_async(af2, af1, None, stat1.st_size))
+                    io.sendfile_async(af2, af1, 0, stat1.st_size))
 
                 af1.seek(0)
                 af2.seek(0)
@@ -272,7 +272,8 @@ class TestBoundaryReader(unittest.TestCase):
                          b'more padding 2\r\n')
         # A read longer than (len(boundary) * 2)
         data = loop.run_until_complete(lr.read(55))
-        self.assertEqual(data,
+        self.assertEqual(
+            data,
             b'0123456789'
             b'0123456789'
             b'0123456789'
