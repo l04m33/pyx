@@ -14,7 +14,8 @@ from .log import logger
 
 
 __all__ = ['AsyncFile', 'sendfile_async', 'BufferedMixin',
-           'BaseReader', 'BufferedReader', 'LengthReader', 'BoundaryReader']
+           'BaseReader', 'BufferedReader', 'LengthReader', 'BoundaryReader',
+           'BaseWriter', 'ChunkedWriter']
 
 
 class AsyncFile:
@@ -529,3 +530,32 @@ class BoundaryReader(BaseReader):
             readn += len(data)
             buf.append(data)
         return b''.join(buf)
+
+
+class BaseWriter:
+    """Base class for writers."""
+
+    def __init__(self, writer):
+        self._writer = writer
+
+    def write(self, data):
+        self._writer.write(data)
+
+    @asyncio.coroutine
+    def drain(self):
+        yield from self._writer.drain()
+
+    def get_extra_info(self, name):
+        return self._writer.get_extra_info(name)
+
+    def close(self):
+        self._writer.close()
+
+
+class ChunkedWriter(BaseWriter):
+    """Write chunked data"""
+
+    def write(self, data):
+        hex_len = (hex(len(data))[2:]).encode()
+        chunk = b''.join([hex_len, b'\r\n', data, b'\r\n'])
+        return super().write(chunk)

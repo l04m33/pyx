@@ -1,6 +1,7 @@
 import unittest
 import tempfile
 import asyncio
+import unittest.mock as mock
 import pyx.io as io
 
 
@@ -17,6 +18,20 @@ def create_dummy_file():
 def create_empty_file():
     f = tempfile.NamedTemporaryFile()
     return f
+
+
+def create_dummy_writer():
+    @asyncio.coroutine
+    def dummy_drain():
+        yield from asyncio.sleep(0.001)
+
+    def dummy_get_extra_info(_name):
+        return 'info place holder'
+
+    writer = mock.Mock(spec=asyncio.StreamWriter)
+    writer.attach_mock(mock.Mock(wraps=dummy_drain), 'drain')
+    writer.attach_mock(mock.Mock(wraps=dummy_get_extra_info), 'get_extra_info')
+    return writer
 
 
 class TestAsyncFile(unittest.TestCase):
@@ -350,3 +365,43 @@ class TestBoundaryReader(unittest.TestCase):
         self.assertEqual(data, b'')
         data = loop.run_until_complete(br.readline())
         self.assertEqual(data, b'padding')
+
+
+class TestBaseWriter(unittest.TestCase):
+    def setUp(self):
+        dummy_writer = create_dummy_writer()
+        self.bw = io.BaseWriter(dummy_writer)
+
+    def test_write(self):
+        self.bw.write(b'dummy data')
+        self.bw._writer.write.assert_called_with(b'dummy data')
+
+    def test_drain(self):
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.bw.drain())
+        self.bw._writer.drain.assert_called_with()
+
+    def test_get_extra_info(self):
+        self.assertEqual(self.bw.get_extra_info('socket'), 'info place holder')
+        self.bw._writer.get_extra_info.assert_called_with('socket')
+
+    def test_close(self):
+        self.bw.close()
+        self.bw._writer.close.assert_called_with()
+
+
+class TestChunkedWriter(unittest.TestCase):
+    def setUp(self):
+        dummy_writer = create_dummy_writer()
+        self.cw = io.ChunkedWriter(dummy_writer)
+
+    def test_write(self):
+        self.cw.write(b'dummy data')
+        self.cw._writer.write.assert_called_with(b'a\r\ndummy data\r\n')
+
+        self.cw.write(b'dummy data and dummy data')
+        self.cw._writer.write.assert_called_with(
+            b'19\r\ndummy data and dummy data\r\n')
+
+        self.cw.write(b'')
+        self.cw._writer.write.assert_called_with(b'0\r\n\r\n')
