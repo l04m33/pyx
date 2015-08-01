@@ -300,6 +300,10 @@ class BaseReader:
     def __init__(self, reader):
         self._reader = reader
 
+    def __getattr__(self, name):
+        # Delegate all methods to the underlying reader object
+        return getattr(self._reader, name)
+
 
 class BufferedReader(BaseReader, BufferedMixin):
     """A reader with buffered semantics."""
@@ -538,18 +542,9 @@ class BaseWriter:
     def __init__(self, writer):
         self._writer = writer
 
-    def write(self, data):
-        self._writer.write(data)
-
-    @asyncio.coroutine
-    def drain(self):
-        yield from self._writer.drain()
-
-    def get_extra_info(self, name):
-        return self._writer.get_extra_info(name)
-
-    def close(self):
-        self._writer.close()
+    def __getattr__(self, name):
+        # Delegate all methods to the underlying writer object
+        return getattr(self._writer, name)
 
 
 class ChunkedWriter(BaseWriter):
@@ -558,4 +553,4 @@ class ChunkedWriter(BaseWriter):
     def write(self, data):
         hex_len = (hex(len(data))[2:]).encode()
         chunk = b''.join([hex_len, b'\r\n', data, b'\r\n'])
-        return super().write(chunk)
+        return self._writer.write(chunk)
